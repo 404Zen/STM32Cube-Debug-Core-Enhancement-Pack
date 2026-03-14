@@ -1,0 +1,422 @@
+--- private_snapshot/clean/VSCodeExtensions/stmicroelectronics.stm32cube-ide-debug-stlink-gdbserver-1.2.0/lib/adapter/STLinkDebugTargetAdapter.js	2026-03-14 14:27:10
++++ private_snapshot/modified/VSCodeExtensions/stmicroelectronics.stm32cube-ide-debug-stlink-gdbserver-1.2.0/lib/adapter/STLinkDebugTargetAdapter.js	2026-03-14 14:26:20
+@@ -44897,7 +44897,41 @@
+        */
+       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       customRequest(command, response, args) {
+-        if (command === "cdt-gdb-adapter/Memory") {
++        if (command === "adapter/setNumberDisplayMode") {
++          const normalizedMode = this.normalizeNumberDisplayMode(args?.mode);
++          if (!normalizedMode) {
++            this.sendErrorResponse(response, 1, `Unsupported number display mode: ${args?.mode}`);
++            return;
++          }
++          this.numberDisplayMode = normalizedMode;
++          this.sendEvent(new debugadapter_1.InvalidatedEvent(["variables"]));
++          response.body = {
++            mode: normalizedMode
++          };
++          this.sendResponse(response);
++        } else if (command === "adapter/setVariableNumberDisplayMode") {
++          const variableKey = this.setVariableNumberDisplayMode(args?.mode, args?.target ?? args);
++          if (!variableKey) {
++            this.sendErrorResponse(response, 1, `Unsupported variable number display mode request: ${JSON.stringify(args ?? {})}`);
++            return;
++          }
++          const normalizedMode = this.getVariableNumberDisplayMode(variableKey) || this.normalizeNumberDisplayMode(args?.mode) || "dec";
++          this.sendEvent(new debugadapter_1.InvalidatedEvent(["variables"]));
++          response.body = {
++            mode: normalizedMode,
++            variableKey
++          };
++          this.sendResponse(response);
++        } else if (command === "adapter/getNumberDisplayMode") {
++          response.body = {
++            mode: this.normalizeNumberDisplayMode(this.numberDisplayMode) || "dec"
++          };
++          this.sendResponse(response);
++        } else if (command === "adapter/invalidateVariables") {
++          this.sendEvent(new debugadapter_1.InvalidatedEvent(["variables"]));
++          response.body = {};
++          this.sendResponse(response);
++        } else if (command === "cdt-gdb-adapter/Memory") {
+           this.memoryRequest(response, args);
+         } else if (command === "cdt-gdb-tests/executeCommand") {
+           const consoleOutput = [];
+@@ -44937,6 +44971,8 @@
+         this.sendResponse(response);
+       }
+       async attachOrLaunchRequest(response, request, args) {
++        this.numberDisplayMode = this.normalizeNumberDisplayMode(args.numberDisplayMode) || "dec";
++        this.variableNumberDisplayModes = Object.create(null);
+         debugadapter_1.logger.setup(args.verbose ? debugadapter_1.Logger.LogLevel.Verbose : debugadapter_1.Logger.LogLevel.Warn, args.logFile || false);
+         this.gdb.on("consoleStreamOutput", (output, category) => {
+           this.sendEvent(new debugadapter_1.OutputEvent(output, category));
+@@ -45466,7 +45502,7 @@
+             }
+           }
+           response.body = {
+-            value: assign.value,
++            value: this.formatIntegerValueForDisplay(assign.value, varobj ? varobj.type : void 0, varobj ? varobj.expression : varname),
+             type: varobj ? varobj.type : void 0,
+             variablesReference: varobj && parseInt(varobj.numchild, 10) > 0 ? this.variableHandles.create({
+               type: "object",
+@@ -45499,6 +45535,15 @@
+             return;
+           }
+           if (args.expression.startsWith(">") && args.context === "repl") {
++            const formatCommandResult = this.handleFormatCommand(args.expression);
++            if (formatCommandResult !== void 0) {
++              response.body = {
++                result: formatCommandResult,
++                variablesReference: 0
++              };
++              this.sendResponse(response);
++              return;
++            }
+             if (args.expression[1] === "-") {
+               await this.gdb.sendCommand(args.expression.slice(1));
+             } else {
+@@ -45552,7 +45597,7 @@
+             }
+           }
+           if (varobj) {
+-            const result = args.context === "variables" && Number(varobj.numchild) ? await this.getChildElements(varobj, args.frameId) : varobj.value;
++            const result = args.context === "variables" && Number(varobj.numchild) ? await this.getChildElements(varobj, args.frameId) : this.formatIntegerValueForDisplay(varobj.value, varobj.type, args.expression);
+             response.body = {
+               result,
+               type: varobj.type,
+@@ -45603,6 +45648,216 @@
+           return varValue;
+         }
+       }
++      formatIntegerValueForDisplay(value, type, variableKey) {
++        if (value === void 0 || value === null || value === "") {
++          return value;
++        }
++        const parsedValue = this.parseIntegerDisplayValue(value, type);
++        if (parsedValue === void 0) {
++          return value;
++        }
++        const isNegative = parsedValue < 0n;
++        const absoluteValue = isNegative ? -parsedValue : parsedValue;
++        const signPrefix = isNegative ? "-" : "";
++        const decimalValue = parsedValue.toString(10);
++        const hexValue = `${signPrefix}0x${absoluteValue.toString(16).toUpperCase()}`;
++        const binaryValue = `${signPrefix}0b${absoluteValue.toString(2)}`;
++        const displayMode = this.resolveNumberDisplayModeForVariable(variableKey);
++        if (displayMode === "hex") {
++          return hexValue;
++        }
++        if (displayMode === "bin") {
++          return binaryValue;
++        }
++        if (displayMode === "all") {
++          return `${decimalValue} | ${hexValue} | ${binaryValue}`;
++        }
++        return decimalValue;
++      }
++      resolveNumberDisplayModeForVariable(variableKey) {
++        const variableMode = this.getVariableNumberDisplayMode(variableKey);
++        if (variableMode) {
++          return variableMode;
++        }
++        return this.normalizeNumberDisplayMode(this.numberDisplayMode) || "dec";
++      }
++      setVariableNumberDisplayMode(mode, target) {
++        const normalizedMode = this.normalizeNumberDisplayMode(mode);
++        if (!normalizedMode) {
++          return void 0;
++        }
++        const variableKeys = this.extractVariableDisplayKeys(target);
++        if (!variableKeys.length) {
++          return void 0;
++        }
++        if (!this.variableNumberDisplayModes) {
++          this.variableNumberDisplayModes = Object.create(null);
++        }
++        for (const variableKey of variableKeys) {
++          this.variableNumberDisplayModes[variableKey] = normalizedMode;
++        }
++        return variableKeys[0];
++      }
++      getVariableNumberDisplayMode(variableKey) {
++        const normalizedKey = this.normalizeVariableDisplayKey(variableKey);
++        if (!normalizedKey || !this.variableNumberDisplayModes) {
++          return void 0;
++        }
++        const directMode = this.normalizeNumberDisplayMode(this.variableNumberDisplayModes[normalizedKey]);
++        if (directMode) {
++          return directMode;
++        }
++        for (const lookupKey of this.getVariableDisplayLookupKeys(normalizedKey)) {
++          const lookupMode = this.normalizeNumberDisplayMode(this.variableNumberDisplayModes[lookupKey]);
++          if (lookupMode) {
++            return lookupMode;
++          }
++        }
++        return void 0;
++      }
++      extractVariableDisplayKeys(target) {
++        if (typeof target === "string") {
++          const onlyKey = this.normalizeVariableDisplayKey(target);
++          return onlyKey ? [onlyKey] : [];
++        }
++        if (!target || typeof target !== "object") {
++          return [];
++        }
++        const keys = [];
++        const candidates = [
++          target.evaluateName,
++          target.expression,
++          target.name,
++          target?.sessionData?.evaluateName,
++          target?.sessionData?.expression,
++          target?.sessionData?.name,
++          target?.variable?.evaluateName,
++          target?.variable?.expression,
++          target?.variable?.name
++        ];
++        for (const candidate of candidates) {
++          const normalizedCandidate = this.normalizeVariableDisplayKey(candidate);
++          if (normalizedCandidate) {
++            keys.push(normalizedCandidate);
++          }
++        }
++        return [...new Set(keys)];
++      }
++      getVariableDisplayLookupKeys(variableKey) {
++        const keys = new Set();
++        const addKey = (value) => {
++          const normalizedValue = this.normalizeVariableDisplayKey(value);
++          if (normalizedValue && normalizedValue !== variableKey) {
++            keys.add(normalizedValue);
++          }
++        };
++        addKey(variableKey.replace(/->/g, "."));
++        addKey(variableKey.replace(/\[[^\]]+\]/g, ""));
++        if (variableKey.startsWith("&(") && variableKey.endsWith(")")) {
++          addKey(variableKey.slice(2, -1));
++        }
++        const leafMatch = /([^.:\[]+)$/.exec(variableKey.replace(/->/g, ".").replace(/::/g, "."));
++        if (leafMatch) {
++          addKey(leafMatch[1]);
++        }
++        return [...keys];
++      }
++      normalizeVariableDisplayKey(key) {
++        const normalizedKey = String(key ?? "").trim();
++        return normalizedKey !== "" ? normalizedKey : void 0;
++      }
++      handleFormatCommand(expression) {
++        const cmdMatch = /^>\s*(?:fmt|format|radix|base)(?:\s+([a-zA-Z0-9]+))?\s*$/i.exec(expression);
++        if (!cmdMatch) {
++          return void 0;
++        }
++        const requestedMode = cmdMatch[1];
++        if (!requestedMode) {
++          const currentMode = this.normalizeNumberDisplayMode(this.numberDisplayMode) || "dec";
++          return `Current number display mode: ${currentMode}`;
++        }
++        const normalizedMode = this.normalizeNumberDisplayMode(requestedMode);
++        if (!normalizedMode) {
++          return "Invalid mode. Use one of: dec|10, hex|16, bin|2";
++        }
++        this.numberDisplayMode = normalizedMode;
++        return `Number display mode set to: ${normalizedMode}`;
++      }
++      normalizeNumberDisplayMode(mode) {
++        const normalizedMode = String(mode ?? "").trim().toLowerCase();
++        switch (normalizedMode) {
++          case "":
++            return void 0;
++          case "dec":
++          case "decimal":
++          case "10":
++            return "dec";
++          case "hex":
++          case "hexadecimal":
++          case "16":
++            return "hex";
++          case "bin":
++          case "binary":
++          case "2":
++            return "bin";
++          case "all":
++            return "all";
++          default:
++            return void 0;
++        }
++      }
++      parseIntegerDisplayValue(value, type) {
++        const textValue = String(value).trim();
++        if (!textValue) {
++          return void 0;
++        }
++        if (/^true$/i.test(textValue)) {
++          return 1n;
++        }
++        if (/^false$/i.test(textValue)) {
++          return 0n;
++        }
++        if (!this.isIntegerLikeType(type)) {
++          return void 0;
++        }
++        const strictValue = this.tryParseBigInt(textValue);
++        if (strictValue !== void 0) {
++          return strictValue;
++        }
++        const prefixedValue = /^([+-]?(?:0x[0-9a-fA-F]+|0b[01]+|\d+))(?:\s|$)/.exec(textValue);
++        if (prefixedValue) {
++          return this.tryParseBigInt(prefixedValue[1]);
++        }
++        return void 0;
++      }
++      tryParseBigInt(value) {
++        const normalized = String(value).trim().toLowerCase();
++        if (!normalized) {
++          return void 0;
++        }
++        let sign = 1n;
++        let numberPart = normalized;
++        if (numberPart.startsWith("+")) {
++          numberPart = numberPart.slice(1);
++        } else if (numberPart.startsWith("-")) {
++          sign = -1n;
++          numberPart = numberPart.slice(1);
++        }
++        if (!/^0x[0-9a-f]+$/.test(numberPart) && !/^0b[01]+$/.test(numberPart) && !/^\d+$/.test(numberPart)) {
++          return void 0;
++        }
++        return sign * BigInt(numberPart);
++      }
++      isIntegerLikeType(type) {
++        if (type === void 0 || type === null || type === "") {
++          return true;
++        }
++        const normalizedType = String(type).toLowerCase();
++        if (normalizedType.includes("*") || normalizedType.includes("float") || normalizedType.includes("double")) {
++          return false;
++        }
++        return /(bool|char|short|int|long|size_t|ssize_t|ptrdiff_t|enum|uint|sint)/.test(normalizedType);
++      }
+       /**
+        * Implement the cdt-gdb-adapter/Memory request.
+        * @param response
+@@ -45896,6 +46151,7 @@
+                 if (exports2.arrayRegex.test(varobj.type)) {
+                   value = await this.getAddr(varobj);
+                 }
++                value = this.formatIntegerValueForDisplay(value, varobj.type, varobj.expression);
+                 variables.push({
+                   name: varobj.expression,
+                   evaluateName: varobj.expression,
+@@ -45938,6 +46194,7 @@
+             if (exports2.arrayRegex.test(varobj.type)) {
+               value = await this.getAddr(varobj);
+             }
++            value = this.formatIntegerValueForDisplay(value, varobj.type, varobj.expression);
+             variables.push({
+               name: varobj.expression,
+               evaluateName: varobj.expression,
+@@ -46001,7 +46258,7 @@
+               variables.push({
+                 name: objChild.exp,
+                 evaluateName: `${parentClassName}.${objChild.exp}`,
+-                value: objChild.value ? objChild.value : objChild.type,
++                value: this.formatIntegerValueForDisplay(objChild.value ? objChild.value : objChild.type, objChild.type, `${parentClassName}.${objChild.exp}`),
+                 type: objChild.type,
+                 variablesReference: parseInt(objChild.numchild, 10) > 0 ? this.variableHandles.create({
+                   type: "object",
+@@ -46040,6 +46297,7 @@
+             }
+             const variableName = isArrayChild ? name : child.exp;
+             const evaluateName = isArrayParent || isArrayChild ? await this.getFullPathExpression(child.name) : `${topLevelPathExpression}.${child.exp}`;
++            value = this.formatIntegerValueForDisplay(value, child.type, evaluateName);
+             variables.push({
+               name: variableName,
+               evaluateName,
+@@ -116287,6 +116545,48 @@
+       }
+       async customRequest(command, response, args) {
+         switch (command) {
++          case "adapter/setNumberDisplayMode": {
++            const normalizedMode = this.normalizeNumberDisplayMode(args?.mode);
++            if (!normalizedMode) {
++              this.sendErrorResponse(response, 1, `Unsupported number display mode: ${args?.mode}`);
++              return;
++            }
++            this.numberDisplayMode = normalizedMode;
++            this.sendEvent(new debugadapter_1.InvalidatedEvent(["variables"]));
++            response.body = {
++              mode: normalizedMode
++            };
++            this.sendResponse(response);
++            break;
++          }
++          case "adapter/setVariableNumberDisplayMode": {
++            const variableKey = this.setVariableNumberDisplayMode(args?.mode, args?.target ?? args);
++            if (!variableKey) {
++              this.sendErrorResponse(response, 1, `Unsupported variable number display mode request: ${JSON.stringify(args ?? {})}`);
++              return;
++            }
++            const normalizedMode = this.getVariableNumberDisplayMode(variableKey) || this.normalizeNumberDisplayMode(args?.mode) || "dec";
++            this.sendEvent(new debugadapter_1.InvalidatedEvent(["variables"]));
++            response.body = {
++              mode: normalizedMode,
++              variableKey
++            };
++            this.sendResponse(response);
++            break;
++          }
++          case "adapter/getNumberDisplayMode": {
++            response.body = {
++              mode: this.normalizeNumberDisplayMode(this.numberDisplayMode) || "dec"
++            };
++            this.sendResponse(response);
++            break;
++          }
++          case "adapter/invalidateVariables": {
++            this.sendEvent(new debugadapter_1.InvalidatedEvent(["variables"]));
++            response.body = {};
++            this.sendResponse(response);
++            break;
++          }
+           case constants_1.CUSTOM_REQUEST_LIVE_EVALUATE: {
+             if (this.gdbLiveWatch) {
+               const evaluateResponse = {
+@@ -116414,7 +116714,7 @@
+             }
+           }
+           if (varobj) {
+-            const result = args.context === "watch" && Number(varobj.numchild) ? await this.liveGetChildElements(varobj, frameId) : varobj.value;
++            const result = args.context === "watch" && Number(varobj.numchild) ? await this.liveGetChildElements(varobj, frameId) : this.formatIntegerValueForDisplay(varobj.value, varobj.type, args.expression);
+             response.body = {
+               result,
+               type: varobj.type,
+@@ -116489,7 +116789,7 @@
+               variables.push({
+                 name: objChild.exp,
+                 evaluateName: `${parentClassName}.${objChild.exp}`,
+-                value: objChild.value ?? objChild.type,
++                value: this.formatIntegerValueForDisplay(objChild.value ?? objChild.type, objChild.type, `${parentClassName}.${objChild.exp}`),
+                 type: objChild.type,
+                 variablesReference: parseInt(objChild.numchild, 10) > 0 ? this.variableHandles.create({
+                   type: "object",
+@@ -116501,7 +116801,7 @@
+           } else {
+             let name = `${ref.varobjName}.${child.exp}`;
+             const varobjName = name;
+-            const value = child.value ?? child.type;
++            let value = child.value ?? child.type;
+             const isArrayParent = cdt_gdb_adapter_oss_1.arrayRegex.test(child.type);
+             const isArrayChild = varobj !== void 0 ? cdt_gdb_adapter_oss_1.arrayRegex.test(varobj.type) && cdt_gdb_adapter_oss_1.arrayChildRegex.test(child.exp) : false;
+             if (isArrayChild) {
+@@ -116509,6 +116809,7 @@
+             }
+             const variableName = isArrayChild ? name : child.exp;
+             const evaluateName = isArrayParent || isArrayChild ? `${topLevelPathExpression}[${child.exp}]` : `${topLevelPathExpression}.${child.exp}`;
++            value = this.formatIntegerValueForDisplay(value, child.type, evaluateName);
+             variables.push({
+               name: variableName,
+               evaluateName,

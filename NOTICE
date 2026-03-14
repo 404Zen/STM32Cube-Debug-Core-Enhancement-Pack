@@ -1,0 +1,17 @@
+This repository is distributed as a patch-workflow toolkit.
+
+What IS included:
+- Documentation, scripts, and release metadata written for this project.
+- Example project-side launch configuration snapshot.
+
+What is NOT included for public redistribution:
+- Full source/bundle files from proprietary STM32Cube VS Code extensions.
+- Modified full copies of ST extension bundles.
+
+Trademark and ownership:
+- STM32 and STMicroelectronics are trademarks/property of STMicroelectronics.
+- Upstream extension files remain under their original license terms.
+
+Important:
+- The MIT license in this repository applies only to files authored in this repository
+  (docs/scripts/metadata), not to any upstream proprietary binaries/source.

@@ -1,0 +1,177 @@
+--- private_snapshot/clean/VSCodeExtensions/stmicroelectronics.stm32cube-ide-debug-jlink-gdbserver-1.2.0/lib/extension.js	2026-03-14 14:27:10
++++ private_snapshot/modified/VSCodeExtensions/stmicroelectronics.stm32cube-ide-debug-jlink-gdbserver-1.2.0/lib/extension.js	2026-03-14 14:26:20
+@@ -1 +1,173 @@
+-"use strict";var k=Object.create;var r=Object.defineProperty;var x=Object.getOwnPropertyDescriptor;var D=Object.getOwnPropertyNames;var y=Object.getPrototypeOf,h=Object.prototype.hasOwnProperty;var J=(e,t)=>{for(var n in t)r(e,n,{get:t[n],enumerable:!0})},b=(e,t,n,i)=>{if(t&&typeof t=="object"||typeof t=="function")for(let o of D(t))!h.call(e,o)&&o!==n&&r(e,o,{get:()=>t[o],enumerable:!(i=x(t,o))||i.enumerable});return e};var a=(e,t,n)=>(n=e!=null?k(y(e)):{},b(t||!e||!e.__esModule?r(n,"default",{value:e,enumerable:!0}):n,e)),j=e=>b(r({},"__esModule",{value:!0}),e);var P={};J(P,{activate:()=>T});module.exports=j(P);var v=a(require("vscode"));var u=a(require("fs")),g=a(require("path")),c=class{context;constructor(t){this.context=t}async resolveDebugConfiguration(t,n,i){return Object.keys(n).length===0&&(n=this.getInitialConfigurations()),n}getInitialConfigurations(){let t=g.join(this.context.extensionPath,"package.json"),n=JSON.parse(u.readFileSync(t,"utf8")),i=g.join(this.context.extensionPath,"package.nls.json"),o=JSON.parse(u.readFileSync(i,"utf8")),m=n.contributes.debuggers.find(f=>f.type==="jlinkgdbtarget")?.initialConfigurations[0];if(m)return JSON.parse(JSON.stringify(m),(E,d)=>typeof d=="string"?d.replace(/%([^%]+)%/g,(C,l)=>o[l]??C):d)}};var s=a(require("vscode")),p={activate:e=>{S(e),L()},deactivate:()=>{}},S=e=>{e.subscriptions.push(s.commands.registerCommand("st-cube-debug-jlink-gdbserver.reset-target.reset",async()=>{let t=s.debug.activeDebugSession;if(t){let n=t.configuration?.quickReset;n===void 0&&(n=["monitor reset",`tbreak ${t.configuration?.runEntry??"main"}`,"continue"]),await s.commands.executeCommand("setContext","stm32cube-ide-reset.JLinkResetting",!0);try{await t.customRequest("adapter/resetTarget",n)}finally{await s.commands.executeCommand("setContext","stm32cube-ide-reset.JLinkResetting",!1)}}})),e.subscriptions.push(s.commands.registerCommand("st-cube-debug-jlink-gdbserver.reset-target.resetGreyed",()=>{}))},L=()=>{s.debug.onDidStartDebugSession(e=>{e.configuration?.type==="jlinkgdbtarget"&&s.commands.executeCommand("setContext","stm32cube-ide-reset.hasJLinkDebugType",!0)}),s.debug.onDidTerminateDebugSession(e=>{e.configuration?.type==="jlinkgdbtarget"&&s.commands.executeCommand("setContext","stm32cube-ide-reset.hasJLinkDebugType",!1)}),s.debug.onDidChangeActiveDebugSession(e=>{e?.configuration?.type==="jlinkgdbtarget"?s.commands.executeCommand("setContext","stm32cube-ide-reset.hasJLinkDebugType",!0):s.commands.executeCommand("setContext","stm32cube-ide-reset.hasJLinkDebugType",!1)})};function T(e){p.activate(e),e.subscriptions.push(v.debug.registerDebugConfigurationProvider("jlinkgdbtarget",new c(e)))}0&&(module.exports={activate});
++"use strict";
++
++const vscode = require("vscode");
++const fs = require("fs");
++const path = require("path");
++
++class JLinkDebugConfigurationProvider {
++    constructor(context) {
++        this.context = context;
++    }
++
++    async resolveDebugConfiguration(_folder, config, _token) {
++        if (Object.keys(config).length === 0) {
++            config = this.getInitialConfigurations();
++        }
++        return config;
++    }
++
++    getInitialConfigurations() {
++        const packagePath = path.join(this.context.extensionPath, "package.json");
++        const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
++        const packageNlsPath = path.join(this.context.extensionPath, "package.nls.json");
++        const packageNls = JSON.parse(fs.readFileSync(packageNlsPath, "utf8"));
++        const initialConfiguration = packageJson.contributes.debuggers.find((debuggerConfig) => debuggerConfig.type === "jlinkgdbtarget")?.initialConfigurations[0];
++        if (!initialConfiguration) {
++            return undefined;
++        }
++        return JSON.parse(
++            JSON.stringify(initialConfiguration),
++            (_key, value) => typeof value === "string"
++                ? value.replace(/%([^%]+)%/g, (match, key) => packageNls[key] ?? match)
++                : value
++        );
++    }
++}
++
++function extractVariableTarget(input) {
++    const candidate = Array.isArray(input) ? input[0] : input;
++    const asText = (value) => typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
++    if (!candidate) {
++        return undefined;
++    }
++    if (typeof candidate === "string") {
++        const expression = asText(candidate);
++        return expression ? { expression } : undefined;
++    }
++    if (typeof candidate !== "object") {
++        return undefined;
++    }
++    const nestedExpression = typeof candidate.expression === "object" ? candidate.expression : undefined;
++    const nestedVariable = typeof candidate.variable === "object" ? candidate.variable : undefined;
++    const target = {
++        evaluateName: asText(candidate.evaluateName)
++            ?? asText(candidate?.sessionData?.evaluateName)
++            ?? asText(nestedExpression?.evaluateName)
++            ?? asText(nestedVariable?.evaluateName),
++        expression: asText(candidate.expression)
++            ?? asText(candidate?.sessionData?.expression)
++            ?? asText(candidate?.sessionData?.name)
++            ?? asText(nestedExpression?.expression)
++            ?? asText(nestedExpression?.name)
++            ?? asText(nestedVariable?.expression)
++            ?? asText(candidate.id),
++        name: asText(candidate.name)
++            ?? asText(candidate?.sessionData?.name)
++            ?? asText(nestedVariable?.name)
++            ?? asText(candidate.label)
++    };
++    return target.evaluateName || target.expression || target.name ? target : undefined;
++}
++
++function getVariableTargetLabel(target) {
++    return target?.evaluateName ?? target?.expression ?? target?.name ?? "<selected variable>";
++}
++
++async function setNumberDisplayMode(mode, variableInput) {
++    const activeSession = vscode.debug.activeDebugSession;
++    const session = (activeSession?.configuration?.type === "jlinkgdbtarget" ? activeSession : undefined)
++        ?? vscode.debug.sessions.find((item) => item.configuration?.type === "jlinkgdbtarget");
++    if (!session) {
++        vscode.window.showWarningMessage("No active JLink debug session found.");
++        return;
++    }
++    try {
++        const variableTarget = extractVariableTarget(variableInput);
++        if (!variableTarget) {
++            vscode.window.showWarningMessage("No variable context detected. Please right-click a specific variable item.");
++            return;
++        }
++        const modeResponse = await session.customRequest("adapter/setVariableNumberDisplayMode", {
++            mode,
++            target: variableTarget
++        });
++        const normalizedMode = modeResponse?.mode ?? mode;
++        const variableLabel = modeResponse?.variableKey ?? getVariableTargetLabel(variableTarget);
++        vscode.window.showInformationMessage(`Variable ${variableLabel} display mode: ${normalizedMode}`);
++        try {
++            await session.customRequest("adapter/invalidateVariables", {});
++        } catch {
++        }
++    } catch (error) {
++        const message = error instanceof Error ? error.message : String(error);
++        vscode.window.showErrorMessage(`Failed to switch number display mode: ${message}`);
++    }
++}
++
++function registerCommands(context) {
++    context.subscriptions.push(vscode.commands.registerCommand("st-cube-debug-jlink-gdbserver.reset-target.reset", async () => {
++        const session = vscode.debug.activeDebugSession;
++        if (!session) {
++            return;
++        }
++
++        let quickReset = session.configuration?.quickReset;
++        if (quickReset === undefined) {
++            quickReset = [
++                "monitor reset",
++                `tbreak ${session.configuration?.runEntry ?? "main"}`,
++                "continue"
++            ];
++        }
++
++        await vscode.commands.executeCommand("setContext", "stm32cube-ide-reset.JLinkResetting", true);
++        try {
++            await session.customRequest("adapter/resetTarget", quickReset);
++        } finally {
++            await vscode.commands.executeCommand("setContext", "stm32cube-ide-reset.JLinkResetting", false);
++        }
++    }));
++
++    context.subscriptions.push(vscode.commands.registerCommand("st-cube-debug-jlink-gdbserver.reset-target.resetGreyed", () => {
++    }));
++
++    context.subscriptions.push(vscode.commands.registerCommand("st-cube-debug-jlink-gdbserver.number-format.dec", (variable) => setNumberDisplayMode("dec", variable)));
++    context.subscriptions.push(vscode.commands.registerCommand("st-cube-debug-jlink-gdbserver.number-format.hex", (variable) => setNumberDisplayMode("hex", variable)));
++    context.subscriptions.push(vscode.commands.registerCommand("st-cube-debug-jlink-gdbserver.number-format.bin", (variable) => setNumberDisplayMode("bin", variable)));
++}
++
++function registerDebugSessionHooks() {
++    vscode.debug.onDidStartDebugSession((session) => {
++        if (session.configuration?.type === "jlinkgdbtarget") {
++            vscode.commands.executeCommand("setContext", "stm32cube-ide-reset.hasJLinkDebugType", true);
++        }
++    });
++
++    vscode.debug.onDidTerminateDebugSession((session) => {
++        if (session.configuration?.type === "jlinkgdbtarget") {
++            vscode.commands.executeCommand("setContext", "stm32cube-ide-reset.hasJLinkDebugType", false);
++        }
++    });
++
++    vscode.debug.onDidChangeActiveDebugSession((session) => {
++        if (session?.configuration?.type === "jlinkgdbtarget") {
++            vscode.commands.executeCommand("setContext", "stm32cube-ide-reset.hasJLinkDebugType", true);
++        } else {
++            vscode.commands.executeCommand("setContext", "stm32cube-ide-reset.hasJLinkDebugType", false);
++        }
++    });
++}
++
++function activate(context) {
++    registerCommands(context);
++    registerDebugSessionHooks();
++    context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider("jlinkgdbtarget", new JLinkDebugConfigurationProvider(context)));
++}
++
++function deactivate() {
++}
++
++module.exports = {
++    activate,
++    deactivate
++};

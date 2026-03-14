@@ -1,0 +1,10 @@
+--- private_snapshot/clean/Code_app/.vscode/launch.json	2026-03-14 14:27:49
++++ private_snapshot/modified/Code_app/.vscode/launch.json	2026-03-14 14:26:20
+@@ -14,6 +14,7 @@
+             "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+             "serverSpeed": "4000",
+             "runEntry": "main",
++            "numberDisplayMode": "dec",
+             "serverReset": "Type 2: ResetPin",
+             // "serverStartupDelay": 200,
+             // "serverExe": "gdbserver",
