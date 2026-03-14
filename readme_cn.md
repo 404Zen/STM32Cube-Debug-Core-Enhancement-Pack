@@ -112,7 +112,7 @@ cd "/path/to/STM32Cube-Debug-Core-Enhancement-Pack"
 如果想指定某次备份：
 
 ```bash
-./scripts/rollback_last_apply.sh "/path/to/your/Code/app" "./backups/apply_20260314_123456"
+./scripts/rollback_last_apply.sh "/path/to/your/Code/app" "./backups/apply_YYYYMMDD_HHMMSS"
 ```
 
 回滚完成后，同样执行 `Developer: Reload Window` 并重启调试。

@@ -70,7 +70,7 @@
 ### Step 1: Open terminal and enter this folder
 
 ```bash
-cd "/path/to/STM32CubeMXDebugCore improve"
+cd "/path/to/STM32Cube-Debug-Core-Enhancement-Pack"
 ```
 
 ### Step 2: Check version compatibility
@@ -112,7 +112,7 @@ It restores from the latest `backups/apply_*` directory by default.
 To restore from a specific backup:
 
 ```bash
-./scripts/rollback_last_apply.sh "/path/to/your/Code/app" "./backups/apply_20260314_123456"
+./scripts/rollback_last_apply.sh "/path/to/your/Code/app" "./backups/apply_YYYYMMDD_HHMMSS"
 ```
 
 After rollback, run `Developer: Reload Window` and restart debug.
