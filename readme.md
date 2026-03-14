@@ -9,7 +9,7 @@
 ## Index
 
 ### Document Entry
-- English document: [`readme_en.md`](./readme_en.md)
+- English document: [`readme.md`](./readme.md)
 - 中文文档: [`readme_cn.md`](./readme_cn.md)
 - Patch workflow guide: [`docs/PATCH_WORKFLOW.md`](./docs/PATCH_WORKFLOW.md)
 - Patch artifacts folder: [`patches/`](./patches)
