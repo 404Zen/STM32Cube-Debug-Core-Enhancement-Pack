@@ -21,6 +21,12 @@
 - Export private local snapshot: [`scripts/private_export.sh`](./scripts/private_export.sh)
 - Generate patch files: [`scripts/make_patches.sh`](./scripts/make_patches.sh)
 
+### Native Windows Script Entry (PowerShell / bat)
+- Check target extension versions: [`scripts/check_target_versions.ps1`](./scripts/check_target_versions.ps1) / [`scripts/check_target_versions.bat`](./scripts/check_target_versions.bat)
+- One-click patch apply: [`scripts/apply_patches.ps1`](./scripts/apply_patches.ps1) / [`scripts/apply_patches.bat`](./scripts/apply_patches.bat)
+- One-click rollback from backup: [`scripts/rollback_last_apply.ps1`](./scripts/rollback_last_apply.ps1) / [`scripts/rollback_last_apply.bat`](./scripts/rollback_last_apply.bat)
+- Export private local snapshot: [`scripts/private_export.ps1`](./scripts/private_export.ps1) / [`scripts/private_export.bat`](./scripts/private_export.bat)
+
 ### Project-side example
 - Launch config snapshot: [`Code_app/.vscode/launch.json`](./Code_app/.vscode/launch.json)
 
@@ -32,14 +38,16 @@
 
 - ✅ Verified and passed MacOS
 
-- ⚠️ Windows/Linux NOT Verified
+- ✅ Verified on Windows on my PC (2026-03-16)
+
+- ⚠️ Pure Linux environment has not been fully regression-tested
 
 - ✅ Verified and passed on the JLink debug path.
 
 - ⚠️ STLink code is synchronized, but has not been validated on real hardware yet.
 
 - Version Information:
-  - Documentation/patch version: `v1.1.0` (2026-03-14)
+  - Documentation/patch version: `v1.1.1` (2026-03-16)
   
   - JLink extension version (validated): `stmicroelectronics.stm32cube-ide-debug-jlink-gdbserver-1.2.0`
   
@@ -73,9 +81,30 @@
 cd "/path/to/STM32Cube-Debug-Core-Enhancement-Pack"
 ```
 
+If you are using Windows, use native PowerShell:
+
+```powershell
+.\scripts\check_target_versions.ps1
+.\scripts\apply_patches.ps1 -AppWorkspace "D:\path\to\Code"
+```
+
+Or run the bat wrappers directly:
+
+```bat
+scripts\check_target_versions.bat
+scripts\apply_patches.bat -AppWorkspace "D:\path\to\Code"
+```
+
 ### Step 2: Check version compatibility
 
 ```bash
+./scripts/check_target_versions.sh
+```
+
+If extension directory auto-detection fails, set it explicitly:
+
+```bash
+export VSCODE_EXTENSIONS_DIR="/mnt/c/Users/<YourName>/.vscode/extensions"
 ./scripts/check_target_versions.sh
 ```
 
@@ -84,13 +113,17 @@ Proceed when JLink/STLink/Debug Core versions are `1.2.0`.
 ### Step 3: Apply patches in one command
 
 ```bash
-./scripts/apply_patches.sh "/path/to/your/Code/app"
+./scripts/apply_patches.sh "/path/to/your/Code"
 ```
 
 The script will automatically:
 - validate compatibility and patch applicability
 - back up original files to `backups/apply_timestamp/`
 - apply patches (already-applied ones are skipped)
+
+Notes:
+- If your project `launch.json` has custom edits and patch context does not match, the script will skip `Code_app/.vscode/launch.json` and continue applying extension patches.
+- During rollback, if that `launch.json` backup does not exist, it is skipped as well while extension files are restored.
 
 ### Step 4: Make VS Code reload changes
 
@@ -104,7 +137,7 @@ The script will automatically:
 To revert the patch, run:
 
 ```bash
-./scripts/rollback_last_apply.sh "/path/to/your/Code/app"
+./scripts/rollback_last_apply.sh "/path/to/your/Code"
 ```
 
 It restores from the latest `backups/apply_*` directory by default.
@@ -112,7 +145,7 @@ It restores from the latest `backups/apply_*` directory by default.
 To restore from a specific backup:
 
 ```bash
-./scripts/rollback_last_apply.sh "/path/to/your/Code/app" "./backups/apply_YYYYMMDD_HHMMSS"
+./scripts/rollback_last_apply.sh "/path/to/your/Code" "./backups/apply_YYYYMMDD_HHMMSS"
 ```
 
 After rollback, run `Developer: Reload Window` and restart debug.
